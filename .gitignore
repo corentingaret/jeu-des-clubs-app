@@ -1,6 +1,8 @@
 backend/venv/
 backend/.env
+backend/.env.production
 backend/__pycache__/
+backend/migrations/
 
 # Frontend
 frontend/node_modules/
@@ -10,3 +12,4 @@ frontend/.expo/
 # Common
 *.log
 .DS_Store
+.config/
