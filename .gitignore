@@ -3,6 +3,7 @@ backend/.env
 backend/.env.production
 backend/__pycache__/
 backend/migrations/
+backend/routes/__pycache__/
 
 # Frontend
 frontend/node_modules/

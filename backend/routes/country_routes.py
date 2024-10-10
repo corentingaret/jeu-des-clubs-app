@@ -1,57 +1,51 @@
 # routes/country_routes.py
-from flask import Blueprint, request, jsonify
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from helpers.database import get_db
+from helpers.auth import get_current_user
 from models import Country
-from extensions import db
-from auth import token_required
+from schemas import CountryCreate, CountryUpdate
 
-country_bp = Blueprint('country_bp', __name__, url_prefix='/api/countries')
+router = APIRouter()
 
-@country_bp.route('/', methods=['GET'])
-@token_required
-def get_countries(current_user):
-    countries = Country.query.all()
-    print(f"Number of countries retrieved: {len(countries)}")
-    for country in countries:
-        print(f"Country: {country.name}, ID: {country.id_country}")
-    return jsonify([{'id': c.id_country, 'name': c.name, 'flag': c.flag_emoji} for c in countries])
+@router.get("/countries")
+def get_countries(db: Session = Depends(get_db)):
+    countries = db.query(Country).all()
+    return countries
 
+@router.post("/countries")
+def create_country(country: CountryCreate, db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+    new_country = Country(**country.dict())
+    db.add(new_country)
+    db.commit()
+    db.refresh(new_country)
+    return new_country
 
-@country_bp.route('/', methods=['POST'])
-@token_required
-def add_country(current_user):
-    data = request.get_json()
-    if not data or not data.get('name'):
-        return jsonify({'message': 'Name is required.'}), 400
-    new_country = Country(name=data['name'], flag_emoji=data.get('flag_emoji'))
-    db.session.add(new_country)
-    db.session.commit()
-    return jsonify({'message': 'Country added successfully.', 'country': {'id': new_country.id_country, 'name': new_country.name, 'flag': new_country.flag_emoji}}), 201
+# Add other CRUD operations as needed
+@router.get("/countries/{country_id}")
+def get_country(country_id: int, db: Session = Depends(get_db)):
+    countries = get_countries(db)
+    country = next((c for c in countries if c.id_country == country_id), None)
+    if country is None:
+        raise HTTPException(status_code=404, detail="Country not found")
+    return country
 
+@router.put("/countries/{country_id}")
+def update_country(country_id: int, country: CountryUpdate, db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+    db_country = db.query(Country).filter(Country.id_country == country_id).first()
+    if db_country is None:
+        raise HTTPException(status_code=404, detail="Country not found")
+    for key, value in country.dict(exclude_unset=True).items():
+        setattr(db_country, key, value)
+    db.commit()
+    db.refresh(db_country)
+    return db_country
 
-@country_bp.route('/<int:id_country>', methods=['GET'])
-@token_required
-def get_country(current_user, id_country):
-    country = Country.query.get_or_404(id_country)
-    return jsonify({'id': country.id_country, 'name': country.name, 'flag': country.flag_emoji})
-
-
-@country_bp.route('/<int:id_country>', methods=['PUT'])
-@token_required
-def update_country(current_user, id_country):
-    data = request.get_json()
-    if not data:
-        return jsonify({'message': 'No data provided.'}), 400
-    country = Country.query.get_or_404(id_country)
-    country.name = data.get('name', country.name)
-    country.flag_emoji = data.get('flag_emoji', country.flag_emoji)
-    db.session.commit()
-    return jsonify({'message': 'Country updated successfully.', 'country': {'id': country.id_country, 'name': country.name, 'flag': country.flag_emoji}})
-
-
-@country_bp.route('/<int:id_country>', methods=['DELETE'])
-@token_required
-def delete_country(current_user, id_country):
-    country = Country.query.get_or_404(id_country)
-    db.session.delete(country)
-    db.session.commit()
-    return jsonify({'message': 'Country deleted successfully.'}), 204
+@router.delete("/countries/{country_id}")
+def delete_country(country_id: int, db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+    country = db.query(Country).filter(Country.id_country == country_id).first()
+    if country is None:
+        raise HTTPException(status_code=404, detail="Country not found")
+    db.delete(country)
+    db.commit()
+    return {"message": "Country deleted successfully"}

@@ -1,17 +1,18 @@
 # routes/player_routes.py
-from flask import Blueprint, request, jsonify
-from models import Player, Country, Club, Position
-from extensions import db
-from auth import token_required
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from helpers.database import get_db
+from helpers.auth import get_current_user
+from models import Player
+from schemas import PlayerCreate, PlayerUpdate
+from typing import List
 
-player_bp = Blueprint('player_bp', __name__, url_prefix='/api/players')
+router = APIRouter()
 
-
-@player_bp.route('/', methods=['GET'])
-@token_required
-def get_players(current_user):
-    players = Player.query.all()
-    return jsonify([{
+@router.get("/players", response_model=List[dict])
+def get_players(db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+    players = db.query(Player).all()
+    return [{
         'id': p.id_player,
         'first_name': p.first_name,
         'last_name': p.last_name,
@@ -22,43 +23,29 @@ def get_players(current_user):
         'foot': p.foot,
         'height_in_cm': p.height_in_cm,
         'retired': p.retired
-    } for p in players])
+    } for p in players]
 
+@router.post("/players", response_model=dict)
+def add_player(player: PlayerCreate, db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+    new_player = Player(**player.dict())
+    db.add(new_player)
+    db.commit()
+    db.refresh(new_player)
+    return {
+        'message': 'Player added successfully.',
+        'player': {
+            'id': new_player.id_player,
+            'first_name': new_player.first_name,
+            'last_name': new_player.last_name
+        }
+    }
 
-@player_bp.route('/', methods=['POST'])
-@token_required
-def add_player(current_user):
-    data = request.get_json()
-    required_fields = ['first_name', 'last_name', 'birth_date']
-    if not all(field in data for field in required_fields):
-        return jsonify({'message': 'First name, last name, and birth date are required.'}), 400
-    
-    new_player = Player(
-        first_name=data['first_name'],
-        last_name=data['last_name'],
-        id_country_born=data.get('id_country_born'),
-        id_country_nationality=data.get('id_country_nationality'),
-        birth_date=data['birth_date'],
-        id_current_club=data.get('id_current_club'),
-        id_position=data.get('id_position'),
-        sub_position=data.get('sub_position'),
-        foot=data.get('foot'),
-        height_in_cm=data.get('height_in_cm'),
-        image_url=data.get('image_url'),
-        retired=data.get('retired', False)
-    )
-    
-    db.session.add(new_player)
-    db.session.commit()
-    
-    return jsonify({'message': 'Player added successfully.', 'player': {'id': new_player.id_player, 'first_name': new_player.first_name, 'last_name': new_player.last_name}}), 201
-
-
-@player_bp.route('/<int:id_player>', methods=['GET'])
-@token_required
-def get_player(current_user, id_player):
-    player = Player.query.get_or_404(id_player)
-    return jsonify({
+@router.get("/players/{id_player}", response_model=dict)
+def get_player(id_player: int, db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+    player = db.query(Player).filter(Player.id_player == id_player).first()
+    if player is None:
+        raise HTTPException(status_code=404, detail="Player not found")
+    return {
         'id': player.id_player,
         'first_name': player.first_name,
         'last_name': player.last_name,
@@ -71,52 +58,43 @@ def get_player(current_user, id_player):
         'height_in_cm': player.height_in_cm,
         'image_url': player.image_url,
         'retired': player.retired
-    })
+    }
 
-
-@player_bp.route('/<int:id_player>', methods=['PUT'])
-@token_required
-def update_player(current_user, id_player):
-    data = request.get_json()
-    if not data:
-        return jsonify({'message': 'No data provided.'}), 400
-    player = Player.query.get_or_404(id_player)
+@router.put("/players/{id_player}", response_model=dict)
+def update_player(id_player: int, player: PlayerUpdate, db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+    db_player = db.query(Player).filter(Player.id_player == id_player).first()
+    if db_player is None:
+        raise HTTPException(status_code=404, detail="Player not found")
     
-    player.first_name = data.get('first_name', player.first_name)
-    player.last_name = data.get('last_name', player.last_name)
-    player.id_country_born = data.get('id_country_born', player.id_country_born)
-    player.id_country_nationality = data.get('id_country_nationality', player.id_country_nationality)
-    player.birth_date = data.get('birth_date', player.birth_date)
-    player.id_current_club = data.get('id_current_club', player.id_current_club)
-    player.id_position = data.get('id_position', player.id_position)
-    player.sub_position = data.get('sub_position', player.sub_position)
-    player.foot = data.get('foot', player.foot)
-    player.height_in_cm = data.get('height_in_cm', player.height_in_cm)
-    player.image_url = data.get('image_url', player.image_url)
-    player.retired = data.get('retired', player.retired)
+    for key, value in player.dict(exclude_unset=True).items():
+        setattr(db_player, key, value)
     
-    db.session.commit()
+    db.commit()
+    db.refresh(db_player)
     
-    return jsonify({'message': 'Player updated successfully.', 'player': {
-        'id': player.id_player,
-        'first_name': player.first_name,
-        'last_name': player.last_name,
-        'country_born': player.country_born.name if player.country_born else None,
-        'country_nationality': player.country_nationality.name if player.country_nationality else None,
-        'current_club': player.current_club.name if player.current_club else None,
-        'position': player.position.name if player.position else None,
-        'sub_position': player.sub_position,
-        'foot': player.foot,
-        'height_in_cm': player.height_in_cm,
-        'image_url': player.image_url,
-        'retired': player.retired
-    }})
+    return {
+        'message': 'Player updated successfully.',
+        'player': {
+            'id': db_player.id_player,
+            'first_name': db_player.first_name,
+            'last_name': db_player.last_name,
+            'country_born': db_player.country_born.name if db_player.country_born else None,
+            'country_nationality': db_player.country_nationality.name if db_player.country_nationality else None,
+            'current_club': db_player.current_club.name if db_player.current_club else None,
+            'position': db_player.position.name if db_player.position else None,
+            'sub_position': db_player.sub_position,
+            'foot': db_player.foot,
+            'height_in_cm': db_player.height_in_cm,
+            'image_url': db_player.image_url,
+            'retired': db_player.retired
+        }
+    }
 
-
-@player_bp.route('/<int:id_player>', methods=['DELETE'])
-@token_required
-def delete_player(current_user, id_player):
-    player = Player.query.get_or_404(id_player)
-    db.session.delete(player)
-    db.session.commit()
-    return jsonify({'message': 'Player deleted successfully.'}), 204
+@router.delete("/players/{id_player}", response_model=dict)
+def delete_player(id_player: int, db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+    player = db.query(Player).filter(Player.id_player == id_player).first()
+    if player is None:
+        raise HTTPException(status_code=404, detail="Player not found")
+    db.delete(player)
+    db.commit()
+    return {"message": "Player deleted successfully"}
