@@ -48,27 +48,33 @@ service_account_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 cred = credentials.Certificate(service_account_path)
 firebase_admin.initialize_app(cred)
 
+
 # Example Protected Route
 @app.route("/api/protected", methods=["GET"])
 @token_required
 def protected_route(current_user):
     return jsonify({"message": f"Hello, {current_user}!"}), 200
 
+
 @app.errorhandler(400)
 def bad_request(error):
     return jsonify({"message": "Bad Request"}), 400
+
 
 @app.errorhandler(401)
 def unauthorized(error):
     return jsonify({"message": "Unauthorized"}), 401
 
+
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({"message": "Resource Not Found"}), 404
 
+
 @app.errorhandler(500)
 def internal_server_error(error):
     return jsonify({"message": "Internal Server Error"}), 500
+
 
 if __name__ == "__main__":
     app.run(debug=True)

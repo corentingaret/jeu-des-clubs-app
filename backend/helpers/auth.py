@@ -2,6 +2,7 @@ from functools import wraps
 from flask import request, jsonify
 from firebase_admin import auth
 
+
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -19,4 +20,5 @@ def token_required(f):
         except Exception as e:
             return jsonify({"message": "Token is invalid!", "error": str(e)}), 401
         return f(current_user, *args, **kwargs)
+
     return decorated
